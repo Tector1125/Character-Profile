@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 Islands RPG Database</title>
+    <style>
+        :root {
+            --accent: #e94560;
+            --bg: #1a1a2e;
+            --panel: #16213e;
+            --island-bg: #0f3460;
+        }
+        body { background-color: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; }
+        
+        /* Stats Dashboard */
+        .stats-bar {
+            max-width: 600px;
+            background: linear-gradient(90deg, var(--accent), #ff6b6b);
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
+        }
+
+        /* Builder UI */
+        .builder-container { 
+            max-width: 600px; 
+            background: var(--panel); 
+            padding: 20px; 
+            border-radius: 12px; 
+            margin-bottom: 20px; 
+            border: 1px solid #333; 
+            position: sticky; 
+            top: 10px; 
+            z-index: 100; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+        .builder-container.minimized { max-height: 45px; padding-bottom: 10px; opacity: 0.9; }
+        .builder-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; cursor: pointer; }
+        .builder-header h1 { margin: 0; font-size: 1.2em; }
+        .toggle-icon { background: var(--accent); border-radius: 50%; width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; font-weight: bold; transition: transform 0.3s; font-size: 12px;}
+        .minimized .toggle-icon { transform: rotate(180deg); }
+
+        /* Search Tool */
+        .search-box { max-width: 600px; margin-bottom: 30px; }
+        .search-box input {
+            background: #16213e;
+            border: 2px solid var(--accent);
+            padding: 15px;
+            font-size: 1.1em;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            color: white;
+            border-radius: 8px;
+            width: 100%;
+        }
+
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        input, textarea, button { margin: 5px 0; padding: 12px; width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid #0f3460; background: #0f3460; color: white; }
+        button { background: var(--accent); border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .cancel-btn { background: #444; margin-top: 5px; }
+        
+        /* Island Map */
+        .world-map { display: flex; flex-direction: column; gap: 40px; padding-bottom: 100px; }
+        .island { background: rgba(15, 52, 96, 0.4); border: 2px solid #333; border-radius: 15px; padding: 20px; min-height: 150px; transition: 0.3s; }
+        .island.drag-over-island { border-color: var(--accent); background: rgba(233, 69, 96, 0.1); }
+        .island-header { font-size: 1.5em; color: var(--accent); border-bottom: 1px solid #333; margin-bottom: 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .island-header .rename-hint { font-size: 0.4em; color: #777; margin-left: 10px; font-style: italic; }
+        .char-count-badge { background: var(--accent); color: white; font-size: 0.5em; padding: 2px 8px; border-radius: 10px; margin-left: 10px; vertical-align: middle; }
+
+        /* Guilds & Cards */
+        .guild-container { display: flex; gap: 20px; overflow-x: auto; padding: 10px; min-height: 50px; }
+        .guild-column { background: var(--island-bg); border-radius: 8px; padding: 15px; min-width: 260px; border: 1px solid var(--accent); cursor: grab; }
+        .character-card { background: var(--panel); padding: 10px; margin-top: 8px; border-radius: 5px; font-size: 0.9em; display: flex; justify-content: space-between; align-items: center; }
+        .card-actions { display: flex; gap: 4px; }
+        .card-actions button { width: 28px; height: 28px; padding: 0; margin: 0; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+
+        /* Wiki View */
+        .wiki-container { background: #fff; color: #000; padding: 30px; border-radius: 4px; max-width: 850px; margin: 0 auto; line-height: 1.6; }
+        .wiki-infobox { float: right; width: 250px; border: 1px solid #a2a9b1; background: #f8f9fa; padding: 5px; margin-left: 20px; }
+        .wiki-infobox img { width: 100%; border: 1px solid #ccc; }
+        .wiki-bold-header { font-weight: bold; display: block; margin-top: 10px; color: #000; border-bottom: 1px solid #ddd; }
+        .wiki-list-item { display: block; padding-left: 15px; position: relative; margin-bottom: 4px; }
+        .wiki-list-item::before { content: "•"; position: absolute; left: 0; color: var(--accent); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="builder-section">
+        <!-- Added Global Count Bar -->
+        <div class="stats-bar">
+            <span>🌍 TOTAL POPULATION:</span>
+            <span id="global-char-count">0 Characters</span>
+        </div>
+
+        <div class="builder-container minimized" id="builderContainer">
+            <div class="builder-header" onclick="toggleBuilder()">
+                <h1 id="form-title" style="color:var(--accent);">+ Enlist New Character</h1>
+                <div class="toggle-icon">▲</div>
+            </div>
+            
+            <div id="builderContent">
+                <div class="grid">
+                    <input type="text" id="name" placeholder="Character Name*">
+                    <input type="text" id="guild" placeholder="Guild Name">
+                </div>
+                <div class="grid">
+                    <input type="number" id="islandInput" placeholder="Island No. (1-11)" min="1" max="11">
+                    <input type="text" id="imgUrl" placeholder="Image URL">
+                </div>
+                <textarea id="appearance" placeholder="Appearance Description" rows="2"></textarea>
+                <textarea id="habits" placeholder="Biography & History" rows="3"></textarea>
+                <button id="saveBtn" onclick="saveCharacter()">Save to Island</button>
+                <button id="cancelBtn" class="cancel-btn" style="display:none;" onclick="resetForm()">Cancel Edit</button>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="🔍 Search characters, guilds, or island names/numbers..." oninput="renderMap()">
+        </div>
+
+        <div class="world-map" id="world-map"></div>
+    </div>
+
+    <div id="fullProfileView" style="display:none; padding: 20px;"></div>
+
+    <script>
+    let ISLAND_NAMES = ["The Arrival", "Mistral Peaks", "Crimson Reef", "Shadow Fen", "Golden Sands", "Iron Tundra", "Azure Cove", "Whispering Woods", "Sky Reach", "The Abyss", "The Eternal Citadel"];
+    let allCharacters = [];
+    let guildLocations = {}; 
+    let editingId = null;
+
+    window.onload = function() {
+        const charData = localStorage.getItem("islandCharsV10");
+        const locData = localStorage.getItem("guildLocsV10");
+        const nameData = localStorage.getItem("islandNamesV10");
+        if (charData) allCharacters = JSON.parse(charData);
+        if (locData) guildLocations = JSON.parse(locData);
+        if (nameData) ISLAND_NAMES = JSON.parse(nameData);
+        renderMap();
+    };
+
+    function toggleBuilder() { document.getElementById('builderContainer').classList.toggle('minimized'); }
+
+    function renameIsland(index) {
+        const newName = prompt("Rename Island " + (index + 1) + ":", ISLAND_NAMES[index]);
+        if (newName) {
+            ISLAND_NAMES[index] = newName.trim();
+            localStorage.setItem("islandNamesV10", JSON.stringify(ISLAND_NAMES));
+            renderMap();
+        }
+    }
+
+    function onGuildDragStart(ev, guildName) { ev.dataTransfer.setData("guildName", guildName); }
+
+    function onIslandDrop(ev, islandNum) {
+        ev.preventDefault();
+        const guildName = ev.dataTransfer.getData("guildName");
+        if (guildName) {
+            guildLocations[guildName] = islandNum;
+            save();
+            renderMap();
+        }
+        ev.currentTarget.classList.remove('drag-over-island');
+    }
+
+    function saveCharacter() {
+        const name = document.getElementById("name").value.trim();
+        const guild = document.getElementById("guild").value.trim() || "Independent";
+        const islNum = parseInt(document.getElementById("islandInput").value) || 1;
+        if(!name) return alert("Name required!");
+
+        const charData = {
+            id: editingId || Date.now().toString(),
+            name: name,
+            guild: guild,
+            img: document.getElementById("imgUrl").value || "https://via.placeholder.com/250x350?text=No+Image",
+            appearance: document.getElementById("appearance").value,
+            habits: document.getElementById("habits").value
+        };
+
+        if (editingId) {
+            const index = allCharacters.findIndex(c => c.id === editingId);
+            allCharacters[index] = charData;
+        } else {
+            allCharacters.push(charData);
+        }
+
+        guildLocations[guild] = Math.min(Math.max(islNum, 1), 11);
+        save();
+        resetForm();
+        renderMap();
+    }
+
+    function editCharacter(id) {
+        document.getElementById('builderContainer').classList.remove('minimized');
+        const char = allCharacters.find(c => c.id === id);
+        editingId = id;
+        document.getElementById("name").value = char.name;
+        document.getElementById("guild").value = char.guild;
+        document.getElementById("islandInput").value = guildLocations[char.guild] || 1;
+        document.getElementById("imgUrl").value = char.img.includes('placeholder') ? "" : char.img;
+        document.getElementById("appearance").value = char.appearance || "";
+        document.getElementById("habits").value = char.habits;
+        document.getElementById("form-title").innerText = "Edit Character";
+        document.getElementById("saveBtn").innerText = "Update Character";
+        document.getElementById("cancelBtn").style.display = "block";
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+
+    function resetForm() {
+        editingId = null;
+        document.querySelectorAll('input, textarea').forEach(i => i.value = "");
+        document.getElementById("form-title").innerText = "+ Enlist New Character";
+        document.getElementById("saveBtn").innerText = "Save to Island";
+        document.getElementById("cancelBtn").style.display = "none";
+    }
+
+    function save() {
+        localStorage.setItem("islandCharsV10", JSON.stringify(allCharacters));
+        localStorage.setItem("guildLocsV10", JSON.stringify(guildLocations));
+    }
+
+    function cleanWikiFormatting(text) {
+        if (!text) return "None";
+        return text.split('\n').map(line => {
+            let trimmed = line.trim();
+            if (!trimmed) return "<br>";
+            if (trimmed.endsWith(':')) return `<span class="wiki-bold-header">${trimmed}</span>`;
+            if (trimmed.match(/^([-•]|\d+\.)\s+/)) {
+                const content = trimmed.replace(/^([-•]|\d+\.)\s+/, '');
+                return `<div class="wiki-list-item">${content}</div>`;
+            }
+            return `<div>${trimmed}</div>`;
+        }).join('');
+    }
+
+    function renderMap() {
+        const query = document.getElementById('searchInput').value.toLowerCase();
+        const map = document.getElementById('world-map');
+        map.innerHTML = "";
+
+        // Update global count
+        document.getElementById('global-char-count').innerText = `${allCharacters.length} Characters`;
+
+        for (let i = 1; i <= 11; i++) {
+            const islandName = ISLAND_NAMES[i-1].toLowerCase();
+            const islandLabel = `island ${i}`.toLowerCase();
+            const islandMatches = islandName.includes(query) || islandLabel.includes(query);
+
+            const islandChars = allCharacters.filter(c => guildLocations[c.guild] === i);
+            const matchingCharsOnIsland = islandChars.filter(c => 
+                c.name.toLowerCase().includes(query) || c.guild.toLowerCase().includes(query)
+            );
+
+            if (query === "" || islandMatches || matchingCharsOnIsland.length > 0) {
+                const islandDiv = document.createElement('div');
+                islandDiv.className = 'island';
+                islandDiv.ondragover = (e) => e.preventDefault();
+                islandDiv.ondragenter = (e) => islandDiv.classList.add('drag-over-island');
+                islandDiv.ondragleave = (e) => islandDiv.classList.remove('drag-over-island');
+                islandDiv.ondrop = (e) => onIslandDrop(e, i);
+
+                islandDiv.innerHTML = `
+                    <div class="island-header">
+                        <div onclick="renameIsland(${i-1})">
+                            Island ${i}: ${ISLAND_NAMES[i-1]} <span class="rename-hint">(click to rename)</span>
+                        </div>
+                        <div class="char-count-badge">${islandChars.length} Characters</div>
+                    </div>
+                    <div class="guild-container" id="island-${i}-guilds"></div>`;
+                map.appendChild(islandDiv);
+
+                const charsToShow = islandMatches ? islandChars : matchingCharsOnIsland;
+                const uniqueGuilds = [...new Set(charsToShow.map(c => c.guild))];
+
+                uniqueGuilds.forEach(gName => {
+                    const guildMembers = charsToShow.filter(c => c.guild === gName);
+                    const islandContainer = document.getElementById(`island-${i}-guilds`);
+                    const gCol = document.createElement('div');
+                    gCol.className = 'guild-column';
+                    gCol.draggable = true;
+                    gCol.ondragstart = (e) => onGuildDragStart(e, gName);
+                    gCol.innerHTML = `
+                        <h4 style="margin:0 0 10px 0; color:var(--accent); border-bottom:1px solid #444; display:flex; justify-content:space-between;">
+                            <span>🛡️ ${gName}</span>
+                            <span style="font-size:0.7em; opacity:0.7;">(${guildMembers.length})</span>
+                        </h4>`;
+                    
+                    guildMembers.forEach(char => {
+                        const cCard = document.createElement('div');
+                        cCard.className = 'character-card';
+                        cCard.innerHTML = `
+                            <span onclick="showProfile('${char.id}')" style="cursor:pointer; text-decoration:underline;">${char.name}</span>
+                            <div class="card-actions">
+                                <button onclick="editCharacter('${char.id}')" style="background:#2ecc71;">✎</button>
+                                <button onclick="deleteChar('${char.id}')" style="background:#444;">✕</button>
+                            </div>`;
+                        gCol.appendChild(cCard);
+                    });
+                    islandContainer.appendChild(gCol);
+                });
+            }
+        }
+    }
+
+    function showProfile(id) {
+        const char = allCharacters.find(c => c.id === id);
+        const view = document.getElementById('fullProfileView');
+        document.getElementById('builder-section').style.display = 'none';
+        view.style.display = 'block';
+        
+        view.innerHTML = `
+            <button onclick="closeProfile()" style="margin-bottom:10px; width:100px; background:#444;">← Back</button>
+            <div class="wiki-container">
+                <div class="wiki-infobox">
+                    <img src="${char.img}" style="width:100%">
+                    <div style="padding:10px; text-align:center; font-weight:bold;">${char.name}</div>
+                </div>
+                <h1 style="color:black; margin-top:0;">${char.name}</h1>
+                <p style="color:black;"><b>Location:</b> ${ISLAND_NAMES[guildLocations[char.guild]-1]}</p>
+                <h3 style="color:black;">Appearance</h3>
+                <div style="color:black;">${cleanWikiFormatting(char.appearance)}</div>
+                <h3 style="color:black;">Biography</h3>
+                <div style="color:black;">${cleanWikiFormatting(char.habits)}</div>
+            </div>`;
+    }
+
+    function closeProfile() {
+        document.getElementById('fullProfileView').style.display = 'none';
+        document.getElementById('builder-section').style.display = 'block';
+    }
+
+    function deleteChar(id) {
+        if(confirm("Delete this character?")) {
+            allCharacters = allCharacters.filter(c => c.id !== id);
+            save();
+            renderMap();
+        }
+    }
+    </script>
+</body>
+</html>
