@@ -93,14 +93,13 @@
 <body>
 
     <div id="builder-section">
-        <!-- Added Global Count Bar -->
         <div class="stats-bar">
             <span>🌍 TOTAL POPULATION:</span>
             <span id="global-char-count">0 Characters</span>
         </div>
 
         <div class="builder-container minimized" id="builderContainer">
-            <div class="builder-header" onclick="toggleBuilder()">
+            <div class="builder-header" id="btnToggleForm">
                 <h1 id="form-title" style="color:var(--accent);">+ Enlist New Character</h1>
                 <div class="toggle-icon">▲</div>
             </div>
@@ -116,13 +115,13 @@
                 </div>
                 <textarea id="appearance" placeholder="Appearance Description" rows="2"></textarea>
                 <textarea id="habits" placeholder="Biography & History" rows="3"></textarea>
-                <button id="saveBtn" onclick="saveCharacter()">Save to Island</button>
-                <button id="cancelBtn" class="cancel-btn" style="display:none;" onclick="resetForm()">Cancel Edit</button>
+                <button id="saveBtn">Save to Island</button>
+                <button id="cancelBtn" class="cancel-btn" style="display:none;">Cancel Edit</button>
             </div>
         </div>
 
         <div class="search-box">
-            <input type="text" id="searchInput" placeholder="🔍 Search characters, guilds, or island names/numbers..." oninput="renderMap()">
+            <input type="text" id="searchInput" placeholder="🔍 Search characters, guilds, or island names/numbers...">
         </div>
 
         <div class="world-map" id="world-map"></div>
@@ -130,20 +129,50 @@
 
     <div id="fullProfileView" style="display:none; padding: 20px;"></div>
 
-    <script>
+    <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDQnoqEG4qAa_eLWoQIjsHX3F9lD962SiM",
+        authDomain: "character-profile-de1d5.firebaseapp.com",
+        projectId: "character-profile-de1d5",
+        storageBucket: "character-profile-de1d5.firebasestorage.app",
+        messagingSenderId: "14464363317",
+        appId: "1:14464363317:web:926a3b71fd74c5c53cfa7c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
     let ISLAND_NAMES = ["The Arrival", "Mistral Peaks", "Crimson Reef", "Shadow Fen", "Golden Sands", "Iron Tundra", "Azure Cove", "Whispering Woods", "Sky Reach", "The Abyss", "The Eternal Citadel"];
     let allCharacters = [];
     let guildLocations = {}; 
     let editingId = null;
 
     window.onload = function() {
-        const charData = localStorage.getItem("islandCharsV10");
-        const locData = localStorage.getItem("guildLocsV10");
         const nameData = localStorage.getItem("islandNamesV10");
-        if (charData) allCharacters = JSON.parse(charData);
-        if (locData) guildLocations = JSON.parse(locData);
         if (nameData) ISLAND_NAMES = JSON.parse(nameData);
-        renderMap();
+
+        // Wire Up Interactive Events
+        document.getElementById('btnToggleForm').addEventListener('click', toggleBuilder);
+        document.getElementById('saveBtn').addEventListener('click', saveCharacter);
+        document.getElementById('cancelBtn').addEventListener('click', resetForm);
+        document.getElementById('searchInput').addEventListener('input', renderMap);
+
+        // Real-time Cloud updates from Firebase
+        onSnapshot(collection(db, "characters"), (snapshot) => {
+            allCharacters = [];
+            guildLocations = {};
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                allCharacters.push(data);
+                if (data.guild && data.islandNum) {
+                    guildLocations[data.guild] = parseInt(data.islandNum);
+                }
+            });
+            renderMap();
+        });
     };
 
     function toggleBuilder() { document.getElementById('builderContainer').classList.toggle('minimized'); }
@@ -159,43 +188,45 @@
 
     function onGuildDragStart(ev, guildName) { ev.dataTransfer.setData("guildName", guildName); }
 
-    function onIslandDrop(ev, islandNum) {
+    async function onIslandDrop(ev, islandNum) {
         ev.preventDefault();
         const guildName = ev.dataTransfer.getData("guildName");
         if (guildName) {
             guildLocations[guildName] = islandNum;
-            save();
-            renderMap();
+            
+            // Instantly update all guild members' positions inside the Cloud database
+            const updates = allCharacters.filter(c => c.guild === guildName).map(char => {
+                char.islandNum = islandNum;
+                return setDoc(doc(db, "characters", char.id), char);
+            });
+            await Promise.all(updates);
         }
         ev.currentTarget.classList.remove('drag-over-island');
     }
 
-    function saveCharacter() {
+    async function saveCharacter() {
         const name = document.getElementById("name").value.trim();
         const guild = document.getElementById("guild").value.trim() || "Independent";
         const islNum = parseInt(document.getElementById("islandInput").value) || 1;
         if(!name) return alert("Name required!");
 
+        const docId = editingId || Date.now().toString();
         const charData = {
-            id: editingId || Date.now().toString(),
+            id: docId,
             name: name,
             guild: guild,
+            islandNum: Math.min(Math.max(islNum, 1), 11),
             img: document.getElementById("imgUrl").value || "https://via.placeholder.com/250x350?text=No+Image",
             appearance: document.getElementById("appearance").value,
             habits: document.getElementById("habits").value
         };
 
-        if (editingId) {
-            const index = allCharacters.findIndex(c => c.id === editingId);
-            allCharacters[index] = charData;
-        } else {
-            allCharacters.push(charData);
+        try {
+            await setDoc(doc(db, "characters", docId), charData);
+            resetForm();
+        } catch (error) {
+            alert("Firestore Error: " + error.message);
         }
-
-        guildLocations[guild] = Math.min(Math.max(islNum, 1), 11);
-        save();
-        resetForm();
-        renderMap();
     }
 
     function editCharacter(id) {
@@ -204,7 +235,7 @@
         editingId = id;
         document.getElementById("name").value = char.name;
         document.getElementById("guild").value = char.guild;
-        document.getElementById("islandInput").value = guildLocations[char.guild] || 1;
+        document.getElementById("islandInput").value = char.islandNum || 1;
         document.getElementById("imgUrl").value = char.img.includes('placeholder') ? "" : char.img;
         document.getElementById("appearance").value = char.appearance || "";
         document.getElementById("habits").value = char.habits;
@@ -220,11 +251,6 @@
         document.getElementById("form-title").innerText = "+ Enlist New Character";
         document.getElementById("saveBtn").innerText = "Save to Island";
         document.getElementById("cancelBtn").style.display = "none";
-    }
-
-    function save() {
-        localStorage.setItem("islandCharsV10", JSON.stringify(allCharacters));
-        localStorage.setItem("guildLocsV10", JSON.stringify(guildLocations));
     }
 
     function cleanWikiFormatting(text) {
@@ -246,7 +272,6 @@
         const map = document.getElementById('world-map');
         map.innerHTML = "";
 
-        // Update global count
         document.getElementById('global-char-count').innerText = `${allCharacters.length} Characters`;
 
         for (let i = 1; i <= 11; i++) {
@@ -254,7 +279,7 @@
             const islandLabel = `island ${i}`.toLowerCase();
             const islandMatches = islandName.includes(query) || islandLabel.includes(query);
 
-            const islandChars = allCharacters.filter(c => guildLocations[c.guild] === i);
+            const islandChars = allCharacters.filter(c => c.islandNum === i);
             const matchingCharsOnIsland = islandChars.filter(c => 
                 c.name.toLowerCase().includes(query) || c.guild.toLowerCase().includes(query)
             );
@@ -269,13 +294,15 @@
 
                 islandDiv.innerHTML = `
                     <div class="island-header">
-                        <div onclick="renameIsland(${i-1})">
+                        <div id="rename-island-${i}">
                             Island ${i}: ${ISLAND_NAMES[i-1]} <span class="rename-hint">(click to rename)</span>
                         </div>
                         <div class="char-count-badge">${islandChars.length} Characters</div>
                     </div>
                     <div class="guild-container" id="island-${i}-guilds"></div>`;
                 map.appendChild(islandDiv);
+
+                document.getElementById(`rename-island-${i}`).addEventListener('click', () => renameIsland(i-1));
 
                 const charsToShow = islandMatches ? islandChars : matchingCharsOnIsland;
                 const uniqueGuilds = [...new Set(charsToShow.map(c => c.guild))];
@@ -286,7 +313,7 @@
                     const gCol = document.createElement('div');
                     gCol.className = 'guild-column';
                     gCol.draggable = true;
-                    gCol.ondragstart = (e) => onGuildDragStart(e, gName);
+                    gCol.addEventListener('dragstart', (e) => onGuildDragStart(e, gName));
                     gCol.innerHTML = `
                         <h4 style="margin:0 0 10px 0; color:var(--accent); border-bottom:1px solid #444; display:flex; justify-content:space-between;">
                             <span>🛡️ ${gName}</span>
@@ -296,12 +323,29 @@
                     guildMembers.forEach(char => {
                         const cCard = document.createElement('div');
                         cCard.className = 'character-card';
-                        cCard.innerHTML = `
-                            <span onclick="showProfile('${char.id}')" style="cursor:pointer; text-decoration:underline;">${char.name}</span>
-                            <div class="card-actions">
-                                <button onclick="editCharacter('${char.id}')" style="background:#2ecc71;">✎</button>
-                                <button onclick="deleteChar('${char.id}')" style="background:#444;">✕</button>
-                            </div>`;
+                        
+                        const nameSpan = document.createElement('span');
+                        nameSpan.style.cssText = "cursor:pointer; text-decoration:underline;";
+                        nameSpan.innerText = char.name;
+                        nameSpan.addEventListener('click', () => showProfile(char.id));
+
+                        const actionDiv = document.createElement('div');
+                        actionDiv.className = 'card-actions';
+
+                        const editBtn = document.createElement('button');
+                        editBtn.style.background = "#2ecc71";
+                        editBtn.innerText = "✎";
+                        editBtn.addEventListener('click', (e) => { e.stopPropagation(); editCharacter(char.id); });
+
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.style.background = "#444";
+                        deleteBtn.innerText = "✕";
+                        deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteChar(char.id); });
+
+                        actionDiv.appendChild(editBtn);
+                        actionDiv.appendChild(deleteBtn);
+                        cCard.appendChild(nameSpan);
+                        cCard.appendChild(actionDiv);
                         gCol.appendChild(cCard);
                     });
                     islandContainer.appendChild(gCol);
@@ -317,19 +361,21 @@
         view.style.display = 'block';
         
         view.innerHTML = `
-            <button onclick="closeProfile()" style="margin-bottom:10px; width:100px; background:#444;">← Back</button>
+            <button id="btnCloseProfile" style="margin-bottom:10px; width:100px; background:#444;">← Back</button>
             <div class="wiki-container">
                 <div class="wiki-infobox">
                     <img src="${char.img}" style="width:100%">
                     <div style="padding:10px; text-align:center; font-weight:bold;">${char.name}</div>
                 </div>
                 <h1 style="color:black; margin-top:0;">${char.name}</h1>
-                <p style="color:black;"><b>Location:</b> ${ISLAND_NAMES[guildLocations[char.guild]-1]}</p>
+                <p style="color:black;"><b>Location:</b> ${ISLAND_NAMES[char.islandNum-1]}</p>
                 <h3 style="color:black;">Appearance</h3>
                 <div style="color:black;">${cleanWikiFormatting(char.appearance)}</div>
                 <h3 style="color:black;">Biography</h3>
                 <div style="color:black;">${cleanWikiFormatting(char.habits)}</div>
             </div>`;
+        
+        document.getElementById('btnCloseProfile').addEventListener('click', closeProfile);
     }
 
     function closeProfile() {
@@ -337,11 +383,13 @@
         document.getElementById('builder-section').style.display = 'block';
     }
 
-    function deleteChar(id) {
-        if(confirm("Delete this character?")) {
-            allCharacters = allCharacters.filter(c => c.id !== id);
-            save();
-            renderMap();
+    async function deleteChar(id) {
+        if(confirm("Delete this character permanently from the global database?")) {
+            try {
+                await deleteDoc(doc(db, "characters", id));
+            } catch (error) {
+                alert("Error deleting record: " + error.message);
+            }
         }
     }
     </script>
