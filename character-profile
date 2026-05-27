@@ -135,9 +135,9 @@
 
     const firebaseConfig = {
         apiKey: "AIzaSyDQnoqEG4qAa_eLWoQIjsHX3F9lD962SiM",
-        authDomain: "character-profile-de1d5.firebaseapp.com",
-        projectId: "character-profile-de1d5",
-        storageBucket: "character-profile-de1d5.firebasestorage.app",
+        authDomain: "character-profile-de4d5.firebaseapp.com", // Changed 1 to 4
+        projectId: "character-profile-de4d5",                 // Changed 1 to 4
+        storageBucket: "character-profile-de4d5.firebasestorage.app", // Changed 1 to 4
         messagingSenderId: "14464363317",
         appId: "1:14464363317:web:926a3b71fd74c5c53cfa7c"
     };
